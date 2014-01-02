@@ -12,11 +12,13 @@ def cleanup(dir='test'):
             os.removedirs(os.path.join(path, dir))
 
 
-# basic test
+
+
+
+# reuse RarArchive object, en
 cleanup()
 rarc = UnRAR2.RarFile('test.rar')
 rarc.infolist()
-assert rarc.comment == "This is a test."
 for info in rarc.infoiter():
     saveinfo = info
     assert (str(info)=="""<RarInfo "test" in "test.rar">""")
@@ -96,8 +98,7 @@ list(UnRAR2.RarFile('test_nulls.rar').infoiter())
 
 # extract files from an archive with protected files
 cleanup()
-rarc = UnRAR2.RarFile('test_protected_files.rar', password="protected")
-rarc.extract()
+UnRAR2.RarFile('test_protected_files.rar', password="protected").extract()
 assert os.path.exists('test'+os.sep+'top_secret_xxx_file.txt')
 cleanup()
 errored = False
