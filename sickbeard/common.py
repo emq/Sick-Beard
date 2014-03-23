@@ -166,13 +166,15 @@ class Quality:
 
         checkName = lambda list, func: func([re.search(x, name, re.I) for x in list])
 
-        if checkName(["(pdtv|hdtv|dsr|tvrip|web.dl|webrip).(xvid|x264|h.?264)"], all) and not checkName(["(720|1080)[pi]"], all):
+        if checkName(["(pdtv|hdtv|dsr|tvrip).(xvid|x264|h.?264)"], all) and not checkName(["(720|1080)[pi]"], all):
+            return Quality.SDTV
+        elif checkName(["web.dl|webrip", "xvid|x264|h.?264"], all) and not checkName(["(720|1080)[pi]"], all):
             return Quality.SDTV
         elif checkName(["(dvdrip|b[r|d]rip)(.ws)?.(xvid|divx|x264)"], any) and not checkName(["(720|1080)[pi]"], all):
             return Quality.SDDVD
         elif checkName(["720p", "hdtv", "x264"], all) or checkName(["hr.ws.pdtv.x264"], any) and not checkName(["(1080)[pi]"], all):          
             return Quality.HDTV                                                                        
-        elif checkName(["720p|1080i", "hdtv", "mpeg-?2"], all):
+        elif checkName(["720p|1080i", "hdtv", "mpeg-?2"], all) or checkName(["1080i.hdtv", "h.?264"], all):
             return Quality.RAWHDTV                                                                     
         elif checkName(["1080p", "hdtv", "x264"], all):         
             return Quality.FULLHDTV                                                                    
@@ -276,7 +278,7 @@ class StatusStrings:
             else:
                 return self.statusStrings[status] + " (" + Quality.qualityStrings[quality] + ")"
         else:
-            return self.statusStrings[name]
+            return self.statusStrings[name] if self.statusStrings.has_key(name) else ''
 
     def has_key(self, name):
         return name in self.statusStrings or name in Quality.DOWNLOADED or name in Quality.SNATCHED or name in Quality.SNATCHED_PROPER

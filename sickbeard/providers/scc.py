@@ -19,12 +19,16 @@
 
 import re
 import traceback
+import datetime
 
 import sickbeard
 import generic
 from sickbeard.common import Quality
 from sickbeard import logger
 from sickbeard import tvcache
+from sickbeard import db
+from sickbeard import classes
+from sickbeard import helpers
 from sickbeard import show_name_helpers
 from sickbeard.common import Overview 
 from sickbeard.exceptions import ex
@@ -39,6 +43,7 @@ class SCCProvider(generic.TorrentProvider):
             'login' : 'https://sceneaccess.eu/login',
             'detail' : 'https://www.sceneaccess.eu/details?id=%s',
             'search' : 'https://sceneaccess.eu/browse?search=%s&method=1&%s',
+            'archive' : 'https://sceneaccess.eu/archive?search=%s&method=1&c26=26',
             'download' : 'https://www.sceneaccess.eu/%s',
             }
 
@@ -77,7 +82,10 @@ class SCCProvider(generic.TorrentProvider):
         self.session = requests.Session()
 
         try:
-            response = self.session.post(self.urls['login'], data=login_params, timeout=30, verify=False)
+            headers = {
+                'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/32.0.1700.107 Safari/537.36'
+            }
+            response = self.session.post(self.urls['login'], data=login_params, headers=headers, timeout=30, verify=False)
         except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError), e:
             logger.log(u'Unable to connect to ' + self.name + ' provider: ' +ex(e), logger.ERROR)
             return False
@@ -118,7 +126,7 @@ class SCCProvider(generic.TorrentProvider):
 
         return [search_string]
 
-    def _get_episode_search_strings(self, ep_obj):
+    def _get_episode_search_strings(self, ep_obj, add_string=''):
 
         search_string = {'Episode': []}
 
@@ -134,7 +142,7 @@ class SCCProvider(generic.TorrentProvider):
                 ep_string = show_name_helpers.sanitizeSceneName(show_name) +' '+ \
                 sickbeard.config.naming_ep_type[2] % {'seasonnumber': ep_obj.season, 'episodenumber': ep_obj.episode}
 
-                search_string['Episode'].append(ep_string)
+                search_string['Episode'].append(re.sub('\s+', ' ', ep_string))    
 
         return [search_string]
 
@@ -151,8 +159,11 @@ class SCCProvider(generic.TorrentProvider):
 
                 if isinstance(search_string, unicode):
                     search_string = unidecode(search_string)
-
-                searchURL = self.urls['search'] % (search_string, self.categories)
+                
+                if mode == 'Season':
+                    searchURL = self.urls['archive'] % (search_string)
+                else:     
+                    searchURL = self.urls['search'] % (search_string, self.categories)
 
                 logger.log(u"Search string: " + searchURL, logger.DEBUG)
 
@@ -168,7 +179,7 @@ class SCCProvider(generic.TorrentProvider):
 
                     #Continue only if one Release is found
                     if len(torrent_rows)<2:
-                        logger.log(u"The Data returned from " + self.name + " do not contains any torrent", logger.DEBUG)
+                        logger.log(u"The Data returned from " + self.name + " does not contain any torrent", logger.DEBUG)
                         continue
 
                     for result in torrent_table.find_all('tr')[1:]:
@@ -220,10 +231,12 @@ class SCCProvider(generic.TorrentProvider):
             self._doLogin()
 
         if not headers:
-            headers = []
+            headers = {}
+            
+        headers.update({'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/32.0.1700.107 Safari/537.36'})
 
         try:
-            response = self.session.get(url, verify=False)
+            response = self.session.get(url, headers=headers, verify=False)
         except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError), e:
             logger.log(u"Error loading "+self.name+" URL: " + ex(e), logger.ERROR)
             return None
@@ -233,7 +246,32 @@ class SCCProvider(generic.TorrentProvider):
             return None
 
         return response.content
-       
+
+    def findPropers(self, search_date=datetime.datetime.today()):
+
+        results = []
+
+        sqlResults = db.DBConnection().select('SELECT s.show_name, e.showid, e.season, e.episode, e.status, e.airdate FROM tv_episodes AS e' +
+                                              ' INNER JOIN tv_shows AS s ON (e.showid = s.tvdb_id)' +
+                                              ' WHERE e.airdate >= ' + str(search_date.toordinal()) +
+                                              ' AND (e.status IN (' + ','.join([str(x) for x in Quality.DOWNLOADED]) + ')' +
+                                              ' OR (e.status IN (' + ','.join([str(x) for x in Quality.SNATCHED]) + ')))'
+                                              )
+        if not sqlResults:
+            return []
+
+        for sqlShow in sqlResults:
+            curShow = helpers.findCertainShow(sickbeard.showList, int(sqlShow["showid"]))
+            curEp = curShow.getEpisode(int(sqlShow["season"]), int(sqlShow["episode"]))
+            searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
+
+            for item in self._doSearch(searchString[0]):
+                title, url = self._get_title_and_url(item)
+                results.append(classes.Proper(title, url, datetime.datetime.today()))
+
+        return results
+
+
 class SCCCache(tvcache.TVCache):
 
     def __init__(self, provider):
@@ -259,19 +297,25 @@ class SCCCache(tvcache.TVCache):
         logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
         self._clearCache()
 
+        ql = []
         for result in rss_results:
             item = (result[0], result[1])
-            self._parseItem(item)
+            ci = self._parseItem(item)
+            if ci is not None:
+                ql.append(ci)
+
+        myDB = self._getDB()
+        myDB.mass_action(ql)
 
     def _parseItem(self, item):
 
         (title, url) = item
 
         if not title or not url:
-            return
+            return None
 
         logger.log(u"Adding item to cache: " + title, logger.DEBUG)
 
-        self._addCacheEntry(title, url)
+        return self._addCacheEntry(title, url)
 
 provider = SCCProvider()
