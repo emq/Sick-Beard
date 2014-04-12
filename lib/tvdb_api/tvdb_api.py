@@ -829,8 +829,15 @@ class Tvdb:
                     if seas_no == 2:
                         seas_no = 1
                         ep_no = ep_no + 7
-                    if seas_no > 2:
+                    elif seas_no > 2:
                         seas_no=seas_no - 1
+                # kitchen nightmares workaround
+                elif sid == 80552:
+                    if seas_no == 1 and ep_no > 10:
+                        seas_no = 2
+                        ep_no = ep_no - 10
+                    elif seas_no > 1:
+                        seas_no = seas_no + 1
 
             for cur_item in cur_ep.getchildren():
                 tag = cur_item.tag.lower()
