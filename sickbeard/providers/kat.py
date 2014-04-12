@@ -21,9 +21,10 @@ from __future__ import with_statement
 import sys
 import os
 import traceback
-import urllib, urllib2
+import urllib
 import re
 import datetime
+import urlparse
 
 import sickbeard
 import generic
@@ -203,12 +204,13 @@ class KATProvider(generic.TorrentProvider):
                 search_string['Episode'].append(ep_string)
         else:
             for show_name in set(allPossibleShowNames(ep_obj.show)):
-                ep_string = sanitizeSceneName(show_name) +' '+'season:'+str(ep_obj.season)+' episode:'+str(ep_obj.episode) \
-                #sickbeard.config.naming_ep_type[0] % {'season:'+ ep_obj.season +'episode:'+ ep_obj.episode} +' category:tv'\
-                #sickbeard.config.naming_ep_type[0] % {'seasonnumber': ep_obj.season, 'episodenumber': ep_obj.episode} + ' %s category:tv' %add_string \
-                
+                ep_string = sanitizeSceneName(show_name) +' '+ \
+                sickbeard.config.naming_ep_type[2] % {'seasonnumber': ep_obj.season, 'episodenumber': ep_obj.episode} +'|'+\
+                sickbeard.config.naming_ep_type[0] % {'seasonnumber': ep_obj.season, 'episodenumber': ep_obj.episode} +'|'+\
+                sickbeard.config.naming_ep_type[3] % {'seasonnumber': ep_obj.season, 'episodenumber': ep_obj.episode} + ' %s category:tv' %add_string \
+
                 search_string['Episode'].append(re.sub('\s+', ' ', ep_string))
-    
+
         return [search_string]
 
     def _doSearch(self, search_params):
@@ -244,7 +246,7 @@ class KATProvider(generic.TorrentProvider):
                     for tr in torrent_rows[1:]:
 
                         try:
-                            link = self.url + (tr.find('div', {'class': 'torrentname'}).find_all('a')[1])['href']
+                            link = urlparse.urljoin(self.url, (tr.find('div', {'class': 'torrentname'}).find_all('a')[1])['href'])
                             id = tr.get('id')[-7:]
                             title = (tr.find('div', {'class': 'torrentname'}).find_all('a')[1]).text
                             url = tr.find('a', 'imagnet')['href']
